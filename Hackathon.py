@@ -117,7 +117,7 @@ def simulate(price_low, price_high):
                 f_bat_sell[3] = -1
                 f_bat_sell[4] = -1
                 f_bat_sell[5] = -1
-            case x if x < price_low:
+            case x if x < price_low and x >= 0:
                 f_wp[0] = 0.5
                 f_wp[1] = 0.75
                 f_wp[2] = 1
@@ -135,13 +135,13 @@ def simulate(price_low, price_high):
                 f_bat_use[4] = 0
                 f_bat_use[5] = 0
 
-                f_bat_sell[0] = 0.1
-                f_bat_sell[1] = 0.1
+                f_bat_sell[0] = 0
+                f_bat_sell[1] = 0
                 f_bat_sell[2] = 0
                 f_bat_sell[3] = 0
                 f_bat_sell[4] = -0.1
                 f_bat_sell[5] = -0.2
-            case x if x < price_high:
+            case x if x < price_high and x >= price_low:
                 f_wp[0] = 0.25
                 f_wp[1] = 0.5
                 f_wp[2] = 0.75
@@ -159,13 +159,13 @@ def simulate(price_low, price_high):
                 f_bat_use[4] = 0.25
                 f_bat_use[5] = 0
 
-                f_bat_sell[0] = 0.2
-                f_bat_sell[1] = 0.2
-                f_bat_sell[2] = 0.1
+                f_bat_sell[0] = 0
+                f_bat_sell[1] = 0
+                f_bat_sell[2] = 0
                 f_bat_sell[3] = 0
                 f_bat_sell[4] = 0
                 f_bat_sell[5] = 0
-            case _:
+            case x if x >= price_high:
                 f_wp[0] = 0
                 f_wp[1] = 0.25
                 f_wp[2] = 0.5
@@ -183,10 +183,10 @@ def simulate(price_low, price_high):
                 f_bat_use[4] = 0.5
                 f_bat_use[5] = 0.25
 
-                f_bat_sell[0] = 0.3
-                f_bat_sell[1] = 0.3
-                f_bat_sell[2] = 0.2
-                f_bat_sell[3] = 0.1
+                f_bat_sell[0] = 0
+                f_bat_sell[1] = 0
+                f_bat_sell[2] = 0
+                f_bat_sell[3] = 0
                 f_bat_sell[4] = 0
                 f_bat_sell[5] = 0
 
@@ -208,14 +208,15 @@ def simulate(price_low, price_high):
                 case _:
                     Q_wp = Q_needed
                     Q_store = 0
-        elif E_th_pct < 1:
-            if E_th_pct < 0.8:
-                Q_wp = 0.1 * Q_store_max
+        else:
+            if E_th_pct < 1:
+                if E_th_pct < 0.8:
+                    Q_wp = 0.1 * Q_store_max
+                else:
+                    Q_wp = 0
+                Q_store = Q_needed - Q_wp
             else:
                 Q_wp = 0
-            Q_store = Q_needed - Q_wp
-        else:
-            Q_wp = 0
             # Was passiert, wenn Speicher voll und überschüssige Wärme????????
 
         #Berechnung des neuen thermischen Speicherstandes
@@ -286,8 +287,8 @@ def simulate(price_low, price_high):
 
 
 # Parametersuche
-price_low_values = np.arange(0.01, 0.05 + 0.0001, 0.005)
-price_high_values = np.arange(0.04, 0.10 + 0.0001, 0.005)
+price_low_values = np.arange(0.01, 0.05, 0.001)
+price_high_values = np.arange(0.04, 0.10, 0.001)
 
 max_autarkie = -np.inf
 best_low_autarkie = None
@@ -299,14 +300,27 @@ best_high_gewinn = None
 
 results = []
 
+total_tests = sum(1 for pl in price_low_values for ph in price_high_values if ph > pl)
+processed_tests = 0
+
 for price_low in price_low_values:
     for price_high in price_high_values:
         # Nur sinnvolle Kombinationen testen
         if price_high <= price_low:
             continue
 
+        processed_tests += 1
+
         autarkie, gewinn, _ = simulate(price_low, price_high)
         results.append((price_low, price_high, autarkie, gewinn))
+
+        # Live-Fortschrittsanzeige waehrend der Parametersuche
+        if processed_tests == 1 or processed_tests % 50 == 0 or processed_tests == total_tests:
+            progress_pct = (processed_tests / total_tests) * 100
+            print(
+                f"Fortschritt Parametersuche: {processed_tests}/{total_tests} ({progress_pct:5.1f}%)",
+                flush=True,
+            )
 
         if autarkie > max_autarkie:
             max_autarkie = autarkie
@@ -337,6 +351,7 @@ sweet_autarkie = None
 sweet_gewinn = None
 
 for pl, ph, aut, gew in results:
+
     if aut_max > aut_min:
         aut_norm = (aut - aut_min) / (aut_max - aut_min)
     else:
