@@ -217,10 +217,11 @@ def simulate(price_low, price_high):
                 Q_store = Q_needed - Q_wp
             else:
                 Q_wp = 0
+                Q_store = 0
             # Was passiert, wenn Speicher voll und überschüssige Wärme????????
 
         #Berechnung des neuen thermischen Speicherstandes
-        E_th[i + 1] = E_th[i] - (Q_store * (delta_t / 3600))
+        E_th[i + 1] = np.clip(E_th[i] - (Q_store * (delta_t / 3600)), 0, E_th_max)
         #Berechnung der el. Leistung der Wärmepumpe
         P_wp = Q_wp / COP
         #Berechnung benötigte el.Leistung --> Leistung Wärmepumpe - PV Leistung
@@ -258,16 +259,29 @@ def simulate(price_low, price_high):
                     P_buy = P_needed
 
         else:
-            if E_bat_pct < 0.99:
-                P_bat = P_needed
-                P_buy = 0
+            surplus = -P_needed   # positiv
+
+            # max. Ladeleistung der Batterie
+            P_charge_max = min(P_bat_max, (E_bat_max - E_bat[i]) * 3600 / delta_t)
+
+            # einfache preisbasierte Entscheidung
+            if Price[i] < 0:
+                f_charge = 1.0      # alles laden
+            elif Price[i] < price_low:
+                f_charge = 1.0      # eher speichern
+            elif Price[i] < price_high:
+                f_charge = 0.5      # halb speichern, halb verkaufen
             else:
-                P_bat = 0
-                P_buy = P_needed
+                f_charge = 0.0      # lieber direkt verkaufen
+
+            P_charge = min(f_charge * surplus, P_charge_max)
+
+            P_bat = -P_charge           # negativ = Batterie laden
+            P_buy = P_needed - P_bat    # negativ = Einspeisung/Verkauf
             # Was passiert, wenn Speicher voll und überschüssige Strom????????
 
         #Berrechnung des neuen Batteriestandes
-        E_bat[i + 1] = E_bat[i] - (P_bat * (delta_t / 3600))
+        E_bat[i + 1] = np.clip(E_bat[i] - (P_bat * (delta_t / 3600)), 0, E_bat_max)
 
         #InnenTemp. berechnen
         if i < (n - 1):
@@ -287,8 +301,8 @@ def simulate(price_low, price_high):
 
 
 # Parametersuche
-price_low_values = np.arange(0.01, 0.05, 0.001)
-price_high_values = np.arange(0.04, 0.10, 0.001)
+price_low_values = np.arange(0.01, 0.05, 0.005)
+price_high_values = np.arange(0.01, 0.10, 0.005)
 
 max_autarkie = -np.inf
 best_low_autarkie = None
@@ -315,7 +329,7 @@ for price_low in price_low_values:
         results.append((price_low, price_high, autarkie, gewinn))
 
         # Live-Fortschrittsanzeige waehrend der Parametersuche
-        if processed_tests == 1 or processed_tests % 50 == 0 or processed_tests == total_tests:
+        if processed_tests == 1 or processed_tests % 1 == 0 or processed_tests == total_tests:
             progress_pct = (processed_tests / total_tests) * 100
             print(
                 f"Fortschritt Parametersuche: {processed_tests}/{total_tests} ({progress_pct:5.1f}%)",
