@@ -222,7 +222,7 @@ def simulate(price_low, price_high):
         E_th[i + 1] = E_th[i] - (Q_store * (delta_t / 3600))
         #Berechnung der el. Leistung der Wärmepumpe
         P_wp = Q_wp / COP
-        #Berrechnung benötigte el.Leistung --> Leistung Wärmepumpe- PV Leistung
+        #Berechnung benötigte el.Leistung --> Leistung Wärmepumpe - PV Leistung
         P_needed = P_demand[i] + P_wp - P_pv
 
         # Einstellung des Bezugs aus der Batterie (laden oder entladen) und ob Strom gekauft oder verkauft wird (negativ = verkaufen)
