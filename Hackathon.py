@@ -347,8 +347,8 @@ for price_low in price_low_values:
             best_high_gewinn = price_high
 
 # Sweet Spot: gewichteter Kompromiss aus normierter Autarkie und normiertem Gewinn
-weight_autarkie = 0.3
-weight_gewinn = 0.7
+weight_autarkie = 0.1
+weight_gewinn = 0.9
 
 autarkie_vals = [r[2] for r in results]
 gewinn_vals = [r[3] for r in results]
