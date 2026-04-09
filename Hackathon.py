@@ -62,6 +62,13 @@ def simulate(price_low, price_high, return_series=False):
     E_sum_pv = 0
     cost_steps = np.zeros(n)
 
+    q_wp_series = np.zeros(n)
+    p_wp_series = np.zeros(n)
+    p_pv_series = np.zeros(n)
+    p_bat_series = np.zeros(n)
+    p_grid_buy_series = np.zeros(n)
+    p_grid_sell_series = np.zeros(n)
+
     kp = 0.1
     e_temp = 0
     u_temp = 0
@@ -296,6 +303,13 @@ def simulate(price_low, price_high, return_series=False):
         Cost += step_cost
         cost_steps[i] = step_cost
 
+        q_wp_series[i] = Q_wp
+        p_wp_series[i] = P_wp
+        p_pv_series[i] = P_pv
+        p_bat_series[i] = P_bat
+        p_grid_buy_series[i] = max(P_buy, 0)
+        p_grid_sell_series[i] = max(-P_buy, 0)
+
         P_sum_load += P_demand[i] + P_wp
         if P_buy > 0:
             P_sum_buy += P_buy
@@ -305,7 +319,21 @@ def simulate(price_low, price_high, return_series=False):
 
     if return_series:
         cum_gewinn = -np.cumsum(cost_steps)
-        return autarkie, gewinn, E_sum_pv, cum_gewinn
+        details = {
+            "T_in": T_in.copy(),
+            "T_out": T_out.copy(),
+            "E_th": E_th[:-1].copy(),
+            "E_bat": E_bat[:-1].copy(),
+            "Q_wp": q_wp_series,
+            "P_wp": p_wp_series,
+            "P_pv": p_pv_series,
+            "P_bat": p_bat_series,
+            "P_grid_buy": p_grid_buy_series,
+            "P_grid_sell": p_grid_sell_series,
+            "P_demand": P_demand.copy(),
+            "Price": Price.copy(),
+        }
+        return autarkie, gewinn, E_sum_pv, cum_gewinn, details
 
     return autarkie, gewinn, E_sum_pv
 
@@ -403,7 +431,9 @@ print(
 )
 
 # Grafische Ausgabe: kumulierter Gewinn über Zeit für den Sweet Spot
-_, sweet_gewinn_check, _, sweet_cum_gewinn = simulate(sweet_low, sweet_high, return_series=True)
+_, sweet_gewinn_check, _, sweet_cum_gewinn, sweet_details = simulate(
+    sweet_low, sweet_high, return_series=True
+)
 
 fig, ax = plt.subplots(figsize=(12, 5))
 
@@ -429,4 +459,89 @@ ax.legend(loc="best")
 
 plt.tight_layout()
 plt.savefig("sweet_spot_einnahmen_zeit.png", dpi=150, bbox_inches="tight")
+plt.show()
+
+# Erweiterte Grafische Ausgabe: alle wichtigen Eigenschaften für den Sweet Spot
+fig_all, axes = plt.subplots(6, 1, figsize=(14, 18), sharex=True)
+
+if timestamp_dt.notna().any():
+    x_all = timestamp_dt
+    axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%d.%m.%Y"))
+    fig_all.autofmt_xdate()
+else:
+    x_all = np.arange(n) * (delta_t / 3600)
+    axes[-1].set_xlabel("Zeit [h]")
+
+if timestamp_dt.notna().any():
+    axes[0].set_xlabel("Zeit")
+
+axes[0].plot(x_all, sweet_cum_gewinn, color="tab:green", linewidth=1.4, label="Kumulierter Gewinn")
+axes[0].axhline(0, color="black", linestyle="--", linewidth=0.8)
+axes[0].set_ylabel("€")
+axes[0].set_title("Einnahmen/Gewinn über Zeit")
+axes[0].grid(alpha=0.3)
+axes[0].legend(loc="best")
+
+axes[1].plot(x_all, sweet_details["Price"], color="tab:blue", linewidth=1.0, label="Strompreis")
+axes[1].axhline(sweet_low, color="tab:orange", linestyle="--", linewidth=0.9, label=f"price_low={sweet_low:.3f}")
+axes[1].axhline(sweet_high, color="tab:red", linestyle="--", linewidth=0.9, label=f"price_high={sweet_high:.3f}")
+axes[1].set_ylabel("€/kWh")
+axes[1].set_title("Preisverlauf mit Sweet-Spot-Grenzen")
+axes[1].grid(alpha=0.3)
+axes[1].legend(loc="best")
+
+axes[2].plot(x_all, sweet_details["T_in"], color="tab:red", linewidth=1.0, label="Innen")
+axes[2].plot(x_all, sweet_details["T_out"], color="tab:cyan", linewidth=0.9, label="Außen")
+axes[2].axhline(T_soll, color="gray", linestyle=":", linewidth=0.9, label="T_soll")
+axes[2].set_ylabel("°C")
+axes[2].set_title("Temperaturen")
+axes[2].grid(alpha=0.3)
+axes[2].legend(loc="best")
+
+axes[3].plot(x_all, sweet_details["E_th"], color="tab:orange", linewidth=1.0, label="Thermischer Speicher")
+axes[3].plot(x_all, sweet_details["E_bat"], color="tab:purple", linewidth=1.0, label="Batterie")
+axes[3].set_ylabel("Wh")
+axes[3].set_title("Speicherstände")
+axes[3].grid(alpha=0.3)
+axes[3].legend(loc="best")
+
+axes[4].plot(x_all, sweet_details["P_pv"], color="goldenrod", linewidth=1.0, label="PV")
+axes[4].plot(x_all, sweet_details["P_wp"], color="tab:blue", linewidth=1.0, label="WP el.")
+axes[4].plot(x_all, sweet_details["P_demand"], color="tab:gray", linewidth=0.9, label="Haushalt")
+axes[4].plot(x_all, sweet_details["P_bat"], color="tab:purple", linewidth=0.9, label="Batterie (+entladen / -laden)")
+axes[4].set_ylabel("W")
+axes[4].set_title("Leistungen")
+axes[4].grid(alpha=0.3)
+axes[4].legend(loc="best")
+
+axes[5].fill_between(
+    x_all,
+    0,
+    sweet_details["P_grid_buy"],
+    color="tab:red",
+    alpha=0.55,
+    label="Netzbezug",
+)
+axes[5].fill_between(
+    x_all,
+    0,
+    sweet_details["P_grid_sell"],
+    color="tab:green",
+    alpha=0.55,
+    label="Einspeisung",
+)
+axes[5].set_ylabel("W")
+axes[5].set_title("Netzbezug und Einspeisung")
+axes[5].grid(alpha=0.3)
+axes[5].legend(loc="best")
+
+fig_all.suptitle(
+    "Sweet Spot - Wichtige Eigenschaften über Zeit\n"
+    f"price_low={sweet_low:.3f}, price_high={sweet_high:.3f}, "
+    f"Gewinn={sweet_gewinn_check:.2f} €, Autarkie={sweet_autarkie:.2f} %",
+    fontsize=12,
+)
+
+plt.tight_layout()
+plt.savefig("sweet_spot_alle_eigenschaften.png", dpi=150, bbox_inches="tight")
 plt.show()
