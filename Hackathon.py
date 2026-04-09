@@ -339,7 +339,7 @@ def simulate(price_low, price_high, return_series=False):
 
 
 # Parametersuche
-price_low_values = np.arange(0.01, 0.1, 0.005)
+price_low_values = np.arange(-0.1, 0.1, 0.005)
 price_high_values = np.arange(0.01, 0.1, 0.005)
 
 max_autarkie = -np.inf
@@ -429,6 +429,50 @@ print(
     f"Sweet Spot:    score={best_score:6.3f}, Autarkie={sweet_autarkie:10.3f} %, "
     f"Gewinn={sweet_gewinn:10.3f} € bei price_low={sweet_low:.3f}, price_high={sweet_high:.3f}"
 )
+
+# Separater Plot: Gewinn über min/max-Zonen mit markiertem Hochpunkt
+zones_df = pd.DataFrame(results, columns=["price_low", "price_high", "autarkie", "gewinn"])
+gewinn_grid = zones_df.pivot(index="price_high", columns="price_low", values="gewinn")
+
+fig_zone, ax_zone = plt.subplots(figsize=(9, 7))
+mesh = ax_zone.pcolormesh(
+    gewinn_grid.columns.to_numpy(),
+    gewinn_grid.index.to_numpy(),
+    gewinn_grid.to_numpy(),
+    shading="auto",
+    cmap="viridis",
+)
+cbar = plt.colorbar(mesh, ax=ax_zone)
+cbar.set_label("Gewinn [€]")
+
+ax_zone.scatter(
+    best_low_gewinn,
+    best_high_gewinn,
+    color="red",
+    edgecolor="white",
+    linewidth=0.8,
+    s=90,
+    zorder=5,
+    label="Hochpunkt (MAX Gewinn)",
+)
+ax_zone.annotate(
+    f"MAX: {max_gewinn:.2f} €\nlow={best_low_gewinn:.3f}, high={best_high_gewinn:.3f}",
+    xy=(best_low_gewinn, best_high_gewinn),
+    xytext=(15, 10),
+    textcoords="offset points",
+    fontsize=9,
+    bbox=dict(boxstyle="round,pad=0.25", fc="white", alpha=0.85),
+)
+
+ax_zone.set_title("Gewinn über Min/Max-Zonen (price_low vs. price_high)")
+ax_zone.set_xlabel("price_low [€/kWh]")
+ax_zone.set_ylabel("price_high [€/kWh]")
+ax_zone.legend(loc="best")
+ax_zone.grid(alpha=0.25)
+
+plt.tight_layout()
+plt.savefig("gewinn_minmax_zonen_hochpunkt.png", dpi=150, bbox_inches="tight")
+plt.show()
 
 # Grafische Ausgabe: kumulierter Gewinn über Zeit für den Sweet Spot
 _, sweet_gewinn_check, _, sweet_cum_gewinn, sweet_details = simulate(
