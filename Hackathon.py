@@ -302,7 +302,7 @@ def simulate(price_low, price_high):
 
 # Parametersuche
 price_low_values = np.arange(0.01, 0.1, 0.005)
-price_high_values = np.arange(0.01, 0.10, 0.005)
+price_high_values = np.arange(0.01, 0.1, 0.005)
 
 max_autarkie = -np.inf
 best_low_autarkie = None
