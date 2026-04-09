@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import matplotlib.patches as mpatches
 
 #Konstanten +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 delta_t = 300 #sekunden
@@ -340,7 +341,7 @@ def simulate(price_low, price_high, return_series=False):
 
 # Parametersuche
 price_low_values = np.arange(-0.1, 0.1, 0.005)
-price_high_values = np.arange(0.01, 0.1, 0.005)
+price_high_values = np.arange(-0.1, 0.1, 0.005)
 
 max_autarkie = -np.inf
 best_low_autarkie = None
@@ -355,6 +356,13 @@ results = []
 total_tests = sum(1 for pl in price_low_values for ph in price_high_values if ph > pl)
 processed_tests = 0
 
+def print_progress_bar(current, total, prefix="Fortschritt Parametersuche", length=30):
+    percent = (current / total) if total else 1.0
+    filled = int(length * percent)
+    bar = "█" * filled + "░" * (length - filled)
+    end_char = "\n" if current == total else "\r"
+    print(f"{prefix}: |{bar}| {current}/{total} ({percent * 100:5.1f}%)", end=end_char, flush=True)
+
 for price_low in price_low_values:
     for price_high in price_high_values:
         # Nur sinnvolle Kombinationen testen
@@ -366,13 +374,8 @@ for price_low in price_low_values:
         autarkie, gewinn, _ = simulate(price_low, price_high)
         results.append((price_low, price_high, autarkie, gewinn))
 
-        # Live-Fortschrittsanzeige waehrend der Parametersuche
-        if processed_tests == 1 or processed_tests % 1 == 0 or processed_tests == total_tests:
-            progress_pct = (processed_tests / total_tests) * 100
-            print(
-                f"Fortschritt Parametersuche: {processed_tests}/{total_tests} ({progress_pct:5.1f}%)",
-                flush=True,
-            )
+        # Live-Fortschrittsanzeige als einzeiliger Balken
+        print_progress_bar(processed_tests, total_tests)
 
         if autarkie > max_autarkie:
             max_autarkie = autarkie
@@ -435,15 +438,34 @@ zones_df = pd.DataFrame(results, columns=["price_low", "price_high", "autarkie",
 gewinn_grid = zones_df.pivot(index="price_high", columns="price_low", values="gewinn")
 
 fig_zone, ax_zone = plt.subplots(figsize=(9, 7))
+zone_cmap = plt.get_cmap("viridis").copy()
+zone_cmap.set_bad(color="#d9d9d9")
+masked_gewinn = np.ma.masked_invalid(gewinn_grid.to_numpy())
+
 mesh = ax_zone.pcolormesh(
     gewinn_grid.columns.to_numpy(),
     gewinn_grid.index.to_numpy(),
-    gewinn_grid.to_numpy(),
+    masked_gewinn,
     shading="auto",
-    cmap="viridis",
+    cmap=zone_cmap,
 )
 cbar = plt.colorbar(mesh, ax=ax_zone)
 cbar.set_label("Gewinn [€]")
+
+# Trennlinie zwischen gültigem (price_high > price_low) und ungültigem Bereich
+diag_x = np.array([price_low_values.min(), price_low_values.max()])
+ax_zone.plot(diag_x, diag_x, color="white", linestyle="--", linewidth=1.2, label="Grenze: price_high = price_low")
+
+# Ungültigen Bereich zusätzlich schraffieren (max <= min)
+ax_zone.fill_between(
+    diag_x,
+    price_low_values.min(),
+    diag_x,
+    color="none",
+    hatch="///",
+    edgecolor="#808080",
+    linewidth=0.0,
+)
 
 ax_zone.scatter(
     best_low_gewinn,
@@ -467,43 +489,20 @@ ax_zone.annotate(
 ax_zone.set_title("Gewinn über Min/Max-Zonen (price_low vs. price_high)")
 ax_zone.set_xlabel("price_low [€/kWh]")
 ax_zone.set_ylabel("price_high [€/kWh]")
-ax_zone.legend(loc="best")
+invalid_patch = mpatches.Patch(facecolor="#d9d9d9", edgecolor="#808080", hatch="///", label="Ungültig: price_high <= price_low")
+handles, labels = ax_zone.get_legend_handles_labels()
+handles.append(invalid_patch)
+labels.append("Ungültig: price_high <= price_low")
+ax_zone.legend(handles, labels, loc="best")
 ax_zone.grid(alpha=0.25)
 
-plt.tight_layout()
-plt.savefig("gewinn_minmax_zonen_hochpunkt.png", dpi=150, bbox_inches="tight")
-plt.show()
+fig_zone.tight_layout()
+fig_zone.savefig("gewinn_minmax_zonen_hochpunkt.png", dpi=150, bbox_inches="tight")
 
-# Grafische Ausgabe: kumulierter Gewinn über Zeit für den Sweet Spot
+# Daten für den Gesamtplot (inkl. kumulierter Gewinn)
 _, sweet_gewinn_check, _, sweet_cum_gewinn, sweet_details = simulate(
     sweet_low, sweet_high, return_series=True
 )
-
-fig, ax = plt.subplots(figsize=(12, 5))
-
-if timestamp_dt.notna().any():
-    x_values = timestamp_dt
-    ax.plot(x_values, sweet_cum_gewinn, color="tab:green", linewidth=1.5, label="Kumulierter Gewinn")
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m.%Y"))
-    fig.autofmt_xdate()
-    ax.set_xlabel("Zeit")
-else:
-    x_values = np.arange(n) * (delta_t / 3600)
-    ax.plot(x_values, sweet_cum_gewinn, color="tab:green", linewidth=1.5, label="Kumulierter Gewinn")
-    ax.set_xlabel("Zeit [h]")
-
-ax.axhline(0, color="black", linestyle="--", linewidth=0.8)
-ax.set_ylabel("Einnahmen / Gewinn [€]")
-ax.set_title(
-    "Einnahmen über Zeit (Sweet Spot)\n"
-    f"price_low={sweet_low:.3f}, price_high={sweet_high:.3f}, Gewinn Ende={sweet_gewinn_check:.2f} €"
-)
-ax.grid(alpha=0.3)
-ax.legend(loc="best")
-
-plt.tight_layout()
-plt.savefig("sweet_spot_einnahmen_zeit.png", dpi=150, bbox_inches="tight")
-plt.show()
 
 # Erweiterte Grafische Ausgabe: alle wichtigen Eigenschaften für den Sweet Spot
 fig_all, axes = plt.subplots(6, 1, figsize=(14, 18), sharex=True)
@@ -586,6 +585,8 @@ fig_all.suptitle(
     fontsize=12,
 )
 
-plt.tight_layout()
-plt.savefig("sweet_spot_alle_eigenschaften.png", dpi=150, bbox_inches="tight")
+fig_all.tight_layout(rect=[0, 0, 1, 0.97])
+fig_all.savefig("sweet_spot_alle_eigenschaften.png", dpi=150, bbox_inches="tight")
+
+# Nur ein show-Aufruf: beide Figuren erscheinen gleichzeitig.
 plt.show()
