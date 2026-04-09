@@ -34,7 +34,9 @@ Price = data.iloc[:, 5].to_numpy()              #Strompreis in €/kWh
 P_demand = data.iloc[:, 6].to_numpy()        #elektrischer Bedarf in W           
 Q_demand = data.iloc[:, 7].to_numpy()        #aktueller thermischer Bedarf in W           
 
-def simulate(price_low, price_high):
+timestamp_dt = pd.to_datetime(timestamp, errors="coerce")
+
+def simulate(price_low, price_high, return_series=False):
     #Berechnung
     T_in = np.zeros(n)
     T_in[0] = 20    #Startwert 20°C
@@ -58,6 +60,7 @@ def simulate(price_low, price_high):
     P_sum_buy = 0
     E_pv = 0
     E_sum_pv = 0
+    cost_steps = np.zeros(n)
 
     kp = 0.1
     e_temp = 0
@@ -289,7 +292,9 @@ def simulate(price_low, price_high):
             T_in[i + 1] = T_in[i] + delta_T_in
 
         #Kosten aufsummieren --> negativ=gewinn
-        Cost += (P_buy / 1000) * (delta_t / 3600) * Price[i]
+        step_cost = (P_buy / 1000) * (delta_t / 3600) * Price[i]
+        Cost += step_cost
+        cost_steps[i] = step_cost
 
         P_sum_load += P_demand[i] + P_wp
         if P_buy > 0:
@@ -297,6 +302,11 @@ def simulate(price_low, price_high):
 
     autarkie = ((P_sum_load - P_sum_buy) / P_sum_load) * 100
     gewinn = -Cost
+
+    if return_series:
+        cum_gewinn = -np.cumsum(cost_steps)
+        return autarkie, gewinn, E_sum_pv, cum_gewinn
+
     return autarkie, gewinn, E_sum_pv
 
 
@@ -391,3 +401,32 @@ print(
     f"Sweet Spot:    score={best_score:6.3f}, Autarkie={sweet_autarkie:10.3f} %, "
     f"Gewinn={sweet_gewinn:10.3f} € bei price_low={sweet_low:.3f}, price_high={sweet_high:.3f}"
 )
+
+# Grafische Ausgabe: kumulierter Gewinn über Zeit für den Sweet Spot
+_, sweet_gewinn_check, _, sweet_cum_gewinn = simulate(sweet_low, sweet_high, return_series=True)
+
+fig, ax = plt.subplots(figsize=(12, 5))
+
+if timestamp_dt.notna().any():
+    x_values = timestamp_dt
+    ax.plot(x_values, sweet_cum_gewinn, color="tab:green", linewidth=1.5, label="Kumulierter Gewinn")
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m.%Y"))
+    fig.autofmt_xdate()
+    ax.set_xlabel("Zeit")
+else:
+    x_values = np.arange(n) * (delta_t / 3600)
+    ax.plot(x_values, sweet_cum_gewinn, color="tab:green", linewidth=1.5, label="Kumulierter Gewinn")
+    ax.set_xlabel("Zeit [h]")
+
+ax.axhline(0, color="black", linestyle="--", linewidth=0.8)
+ax.set_ylabel("Einnahmen / Gewinn [€]")
+ax.set_title(
+    "Einnahmen über Zeit (Sweet Spot)\n"
+    f"price_low={sweet_low:.3f}, price_high={sweet_high:.3f}, Gewinn Ende={sweet_gewinn_check:.2f} €"
+)
+ax.grid(alpha=0.3)
+ax.legend(loc="best")
+
+plt.tight_layout()
+plt.savefig("sweet_spot_einnahmen_zeit.png", dpi=150, bbox_inches="tight")
+plt.show()
